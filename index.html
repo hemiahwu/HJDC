@@ -1,0 +1,402 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>黄金对冲精密计算器 (1.86版 - 优化UI)</title>
+    <style>
+        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; background-color: #f4f7f6; padding: 20px; color: #333; }
+        .container { max-width: 1100px; margin: 0 auto; background: white; padding: 30px; border-radius: 16px; box-shadow: 0 10px 30px rgba(0,0,0,0.05); }
+        h2 { text-align: center; color: #2c3e50; border-bottom: 2px solid #eee; padding-bottom: 20px; margin-bottom: 30px; letter-spacing: 1px; }
+        
+        /* 输入面板 - 网格布局核心 */
+        .input-panel { 
+            display: grid; 
+            gap: 20px; 
+            margin-bottom: 30px;
+        }
+
+        /* 大屏幕下强制3列 */
+        @media (min-width: 768px) {
+            .input-panel {
+                grid-template-columns: repeat(3, 1fr); 
+            }
+        }
+
+        /* 输入框组样式 */
+        .input-group { 
+            background: #fff; 
+            padding: 5px;
+            display: flex;
+            flex-direction: column;
+        }
+
+        /* 标签样式 */
+        .input-group label { 
+            display: block; 
+            font-weight: 600; 
+            margin-bottom: 8px; 
+            color: #666; 
+            font-size: 13px; 
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        /* 输入框样式 */
+        .input-group input { 
+            width: 100%; 
+            padding: 12px 15px; 
+            border: 2px solid #eef2f7; 
+            border-radius: 8px; 
+            font-size: 16px; 
+            font-weight: 700; 
+            color: #2c3e50;
+            box-sizing: border-box; 
+            transition: all 0.3s;
+            background: #fcfcfc;
+        }
+        .input-group input:focus { border-color: #3498db; background: #fff; outline: none; box-shadow: 0 0 0 3px rgba(52, 152, 219, 0.1); }
+        .input-group input:disabled { background: #eaeff2; color: #8898aa; cursor: not-allowed; border-color: #eaeff2; }
+        
+        /* 视觉辅助线 - 让每行看起来更清晰 */
+        .row-group-bonus input { border-left: 4px solid #e67e22; } /* 赠金行 橙色 */
+        .row-group-real input { border-left: 4px solid #27ae60; }  /* 真金行 绿色 */
+        .row-group-base input { border-left: 4px solid #34495e; }  /* 基础行 深蓝 */
+
+        .formula-hint { font-size: 11px; color: #999; margin-top: 6px; text-align: right; }
+
+        /* 按钮 */
+        .btn { width: 100%; padding: 18px; background: linear-gradient(135deg, #2980b9, #3498db); color: white; border: none; border-radius: 12px; font-size: 18px; font-weight: bold; cursor: pointer; transition: 0.3s; box-shadow: 0 8px 20px rgba(52, 152, 219, 0.3); }
+        .btn:hover { transform: translateY(-2px); box-shadow: 0 10px 25px rgba(52, 152, 219, 0.4); }
+
+        /* 结果区域 */
+        .result-section { margin-top: 40px; display: none; animation: fadeIn 0.5s ease; }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+
+        .info-card { background: #f8fbff; border: 1px solid #e1eefc; padding: 20px; border-radius: 10px; margin-bottom: 25px; display: flex; justify-content: space-between; align-items: center; box-shadow: 0 2px 10px rgba(0,0,0,0.02); }
+        .info-item { font-size: 14px; line-height: 1.7; }
+        .info-item span.lots { font-weight: 800; font-family: monospace; font-size: 16px; padding: 2px 6px; border-radius: 4px; background: rgba(0,0,0,0.05); }
+
+        .scenario-box { border: 1px solid #eee; border-radius: 12px; overflow: hidden; margin-bottom: 40px; background: white; box-shadow: 0 5px 20px rgba(0,0,0,0.03); }
+        
+        .sc-header { padding: 18px 25px; color: white; display: flex; justify-content: space-between; align-items: center; font-weight: bold; font-size: 15px; }
+        .bg-win-real { background: linear-gradient(135deg, #27ae60, #2ecc71); }
+        .bg-win-bonus { background: linear-gradient(135deg, #d35400, #e67e22); }
+        
+        .summary-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 30px; padding: 25px; background: #fafafa; border-bottom: 1px solid #eee; }
+        .sum-item { display: flex; justify-content: space-between; margin-bottom: 8px; font-size: 14px; color: #555; }
+        .sum-item.highlight { font-weight: 800; color: #333; font-size: 18px; border-top: 1px solid #ddd; padding-top: 15px; margin-top: 10px; }
+        
+        .profit-plus { color: #27ae60; }
+        .profit-minus { color: #c0392b; }
+
+        .table-responsive { overflow-x: auto; }
+        table { width: 100%; border-collapse: collapse; font-size: 13px; }
+        th { background: #f8f9fa; padding: 15px; text-align: center; color: #666; border-bottom: 2px solid #eee; font-weight: 700; text-transform: uppercase; font-size: 12px; }
+        td { padding: 12px; text-align: center; border-bottom: 1px solid #f0f0f0; color: #444; }
+        tr:last-child td { border-bottom: none; }
+        tr:nth-child(even) { background-color: #fdfdfd; }
+        
+        .dist-col { color: #8e44ad; font-weight: bold; background: rgba(142, 68, 173, 0.05); }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <h2>黄金对冲精密计算器 (1.86版)</h2>
+
+    <div class="input-panel">
+        
+        <!-- 第一行：基础行情与点差 (深色边框) -->
+        <div class="input-group row-group-base">
+            <label>1. 黄金现价 (入场)</label>
+            <input type="number" id="goldPrice" placeholder="例如 2650" step="0.01">
+        </div>
+        <div class="input-group row-group-base">
+            <label>真金账户点差 ($/手)</label>
+            <input type="number" id="realSpread" value="20">
+        </div>
+        <div class="input-group row-group-base">
+            <label>赠金账户点差 ($/手)</label>
+            <input type="number" id="bonusSpread" value="50">
+        </div>
+
+        <!-- 第二行：赠金账户设置 (橙色边框) -->
+        <div class="input-group row-group-bonus">
+            <label>2. 赠金账户-本金 ($)</label>
+            <input type="number" id="bonusCash" value="500">
+        </div>
+        <div class="input-group row-group-bonus">
+            <label>赠金账户-赠金 ($)</label>
+            <input type="number" id="bonusCredit" value="550">
+        </div>
+        <div class="input-group row-group-bonus">
+            <label>赠金账户-爆仓线 (%)</label>
+            <input type="number" id="bonusStopOut" value="30" placeholder="默认30">
+        </div>
+
+        <!-- 第三行：真金账户设置 (绿色边框) -->
+        <div class="input-group row-group-real">
+            <label>3. 真金账户需入金 ($)</label>
+            <input type="number" id="realDeposit" disabled style="background:#e8f5e9; color:#27ae60;">
+            <div class="formula-hint">= 取整 (本金+赠金 / 系数)</div>
+        </div>
+        <div class="input-group row-group-real">
+            <label>入金计算系数</label>
+            <input type="number" id="calcCoeff" value="1.83" step="0.01">
+            <div class="formula-hint">调整此系数改变建议入金</div>
+        </div>
+        <div class="input-group row-group-real">
+            <label>真金账户-爆仓线 (%)</label>
+            <input type="number" id="realStopOut" value="50" placeholder="默认50">
+        </div>
+
+    </div>
+
+    <button class="btn" onclick="calculate()">开始推演详细报表</button>
+
+    <div class="result-section" id="resultArea">
+        
+        <!-- 概览信息 -->
+        <div class="info-card">
+            <div class="info-item">
+                <strong>真金账户配置 (做多)</strong><br>
+                本金: $<span id="disp_real_dep"></span><br>
+                仓位: <span id="disp_real_lots" class="lots" style="color:#27ae60"></span>
+            </div>
+            <div class="info-item" style="text-align:right">
+                <strong>赠金账户配置 (做空)</strong><br>
+                总额: $<span id="disp_bonus_total"></span><br>
+                仓位: <span id="disp_bonus_lots" class="lots" style="color:#d35400"></span>
+            </div>
+        </div>
+
+        <!-- 方案A -->
+        <div class="scenario-box">
+            <div class="sc-header bg-win-real">
+                <span>🟢 方案A：行情上涨 (赠金爆仓 -> 真金盈利)</span>
+                <span id="header_profit_A"></span>
+            </div>
+            <div class="summary-grid">
+                <div>
+                    <div class="sum-item"><span>真金最终余额:</span> <span id="val_bal_A"></span></div>
+                    <div class="sum-item"><span>总投入成本:</span> <span id="val_cost_A"></span></div>
+                </div>
+                <div>
+                    <div class="sum-item highlight"><span>最终净利润:</span> <span id="val_net_A"></span></div>
+                    <div style="font-size:12px; color:#888; text-align:right">*理想情况，利润最大化</div>
+                </div>
+            </div>
+            <div class="table-responsive">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>层级</th>
+                            <th>爆仓价格</th>
+                            <th>波动距离</th>
+                            <th>强平(赠金)</th>
+                            <th>锁利(真金)</th>
+                            <th>本轮净赚</th>
+                        </tr>
+                    </thead>
+                    <tbody id="table_A"></tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- 方案B -->
+        <div class="scenario-box">
+            <div class="sc-header bg-win-bonus">
+                <span>🟠 方案B：行情下跌 (真金爆仓 -> 赠金盈利)</span>
+                <span id="header_profit_B"></span>
+            </div>
+            <div class="summary-grid">
+                <div>
+                    <div class="sum-item"><span>赠金最终总额:</span> <span id="val_bal_B"></span></div>
+                    <div class="sum-item" style="color:#c0392b"><span>扣除: 不可提现赠金:</span> <span id="val_cred_B"></span></div>
+                    <div class="sum-item"><span>总投入成本:</span> <span id="val_cost_B"></span></div>
+                </div>
+                <div>
+                    <div class="sum-item highlight"><span>最终净利润:</span> <span id="val_net_B"></span></div>
+                    <div style="font-size:12px; color:#888; text-align:right">*保底情况，能否盈利取决于点差与赠金量</div>
+                </div>
+            </div>
+            <div class="table-responsive">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>层级</th>
+                            <th>爆仓价格</th>
+                            <th>波动距离</th>
+                            <th>强平(真金)</th>
+                            <th>锁利(赠金)</th>
+                            <th>本轮净赚</th>
+                        </tr>
+                    </thead>
+                    <tbody id="table_B"></tbody>
+                </table>
+            </div>
+        </div>
+
+    </div>
+</div>
+
+<script>
+    // 1. 自动计算真金入金
+    function autoCalcDeposit() {
+        let bCash = parseFloat(document.getElementById('bonusCash').value) || 0;
+        let bCred = parseFloat(document.getElementById('bonusCredit').value) || 0;
+        let coeff = parseFloat(document.getElementById('calcCoeff').value) || 1.83; 
+        
+        let rDep = Math.floor(bCash + (bCred / coeff));
+        document.getElementById('realDeposit').value = rDep;
+    }
+
+    document.getElementById('bonusCash').addEventListener('input', autoCalcDeposit);
+    document.getElementById('bonusCredit').addEventListener('input', autoCalcDeposit);
+    document.getElementById('calcCoeff').addEventListener('input', autoCalcDeposit);
+
+    // 2. 主计算逻辑
+    function calculate() {
+        let price = parseFloat(document.getElementById('goldPrice').value);
+        let bCash = parseFloat(document.getElementById('bonusCash').value);
+        let bCred = parseFloat(document.getElementById('bonusCredit').value);
+        let rDep = parseFloat(document.getElementById('realDeposit').value);
+
+        let spreadReal = parseFloat(document.getElementById('realSpread').value) || 20;
+        let spreadBonus = parseFloat(document.getElementById('bonusSpread').value) || 50;
+
+        let rStopInput = parseFloat(document.getElementById('realStopOut').value) || 50;
+        let bStopInput = parseFloat(document.getElementById('bonusStopOut').value) || 30;
+        let rStop = rStopInput / 100.0;
+        let bStop = bStopInput / 100.0;
+
+        if(!price || !bCash || !rDep) { alert("请填写完整数据"); return; }
+
+        let totalBonus = bCash + bCred;
+        let totalCost = bCash + rDep;
+
+        // 手数模型基准
+        let base_real_lots = [0.02, 0.06, 0.08, 0.15, 0.23];
+        let base_bonus_lots = [0.02, 0.08, 0.10, 0.20, 0.30];
+
+        let rRatio = rDep / 800;
+        let rLots = base_real_lots.map(l => Math.max(0.01, parseFloat((l * rRatio).toFixed(2))));
+
+        let bRatio = totalBonus / 1050;
+        let bLots = base_bonus_lots.map(l => Math.max(0.01, parseFloat((l * bRatio).toFixed(2))));
+
+        document.getElementById('resultArea').style.display = 'block';
+        document.getElementById('disp_real_dep').innerText = rDep;
+        document.getElementById('disp_real_lots').innerText = rLots.join(' + ');
+        document.getElementById('disp_bonus_total').innerText = totalBonus;
+        document.getElementById('disp_bonus_lots').innerText = bLots.join(' + ');
+
+        // 计算方案 A
+        let simA = simulate(price, [...rLots], [...bLots], rDep, totalBonus, 1, rStop, bStop, spreadReal, spreadBonus);
+        renderA(simA, rDep, bCash, totalCost);
+
+        // 计算方案 B
+        let simB = simulate(price, [...rLots], [...bLots], rDep, totalBonus, -1, rStop, bStop, spreadReal, spreadBonus);
+        renderB(simB, rDep, bCash, bCred, totalCost);
+    }
+
+    function simulate(startPrice, rLots, bLots, rBal, bBal, direction, rStop, bStop, spreadR_unit, spreadB_unit) {
+        let logs = [];
+        let curR = rBal;
+        let curB = bBal;
+        
+        let activeR = [...rLots];
+        let activeB = [...bLots];
+
+        for(let i=0; i<5; i++) {
+            if(activeR.length === 0) break;
+            
+            let sumR = activeR.reduce((a,b)=>a+b,0);
+            let sumB = activeB.reduce((a,b)=>a+b,0);
+            let killPrice = 0;
+            
+            let spreadR = sumR * spreadR_unit; 
+            let spreadB = sumB * spreadB_unit;
+
+            if(direction === 1) { 
+                let V = sumB * 100;
+                killPrice = (curB + startPrice * V - spreadB) / (V * (1 + bStop/500));
+            } else {
+                let V = sumR * 100;
+                killPrice = (curR - startPrice * V - spreadR) / (V * (rStop/500 - 1));
+            }
+
+            let popR = activeR.pop();
+            let popB = activeB.pop();
+            
+            let pl_R = (killPrice - startPrice) * popR * 100 - (popR * spreadR_unit);
+            let pl_B = (startPrice - killPrice) * popB * 100 - (popB * spreadB_unit);
+            
+            curR += pl_R;
+            curB += pl_B;
+            
+            logs.push({
+                step: i+1,
+                price: killPrice,
+                dist: Math.abs(killPrice - startPrice),
+                lr: popR, lb: popB,
+                net: pl_R + pl_B
+            });
+        }
+        return { logs, finalR: curR, finalB: curB };
+    }
+
+    function renderA(data, costR, costB, totalCost) {
+        let net = data.finalR - costR - costB;
+        document.getElementById('val_bal_A').innerText = '$' + data.finalR.toFixed(2);
+        document.getElementById('val_cost_A').innerText = '-$' + totalCost.toFixed(2);
+        let elNet = document.getElementById('val_net_A');
+        elNet.innerText = (net>0?'+':'') + '$' + net.toFixed(2);
+        elNet.className = net>0?'profit-plus':'profit-minus';
+        document.getElementById('header_profit_A').innerText = (net>0?'+':'') + '$' + net.toFixed(2);
+
+        let html = '';
+        data.logs.forEach(l => {
+            html += `<tr>
+                <td>第 ${l.step} 仓</td>
+                <td>${l.price.toFixed(2)}</td>
+                <td class="dist-col">${l.dist.toFixed(2)} USD</td>
+                <td style="color:#c0392b">${l.lb}</td>
+                <td style="color:#27ae60">${l.lr}</td>
+                <td class="${l.net>0?'profit-plus':'profit-minus'}">$${l.net.toFixed(2)}</td>
+            </tr>`;
+        });
+        document.getElementById('table_A').innerHTML = html;
+    }
+
+    function renderB(data, costR, costB, creditB, totalCost) {
+        let withdrawable = data.finalB - creditB;
+        let net = withdrawable - costR - costB;
+        document.getElementById('val_bal_B').innerText = '$' + data.finalB.toFixed(2);
+        document.getElementById('val_cred_B').innerText = '-$' + creditB.toFixed(2);
+        document.getElementById('val_cost_B').innerText = '-$' + totalCost.toFixed(2);
+        let elNet = document.getElementById('val_net_B');
+        elNet.innerText = (net>0?'+':'') + '$' + net.toFixed(2);
+        elNet.className = net>0?'profit-plus':'profit-minus';
+        document.getElementById('header_profit_B').innerText = (net>0?'+':'') + '$' + net.toFixed(2);
+
+        let html = '';
+        data.logs.forEach(l => {
+            html += `<tr>
+                <td>第 ${l.step} 仓</td>
+                <td>${l.price.toFixed(2)}</td>
+                <td class="dist-col">${l.dist.toFixed(2)} USD</td>
+                <td style="color:#c0392b">${l.lr}</td>
+                <td style="color:#27ae60">${l.lb}</td>
+                <td class="${l.net>0?'profit-plus':'profit-minus'}">$${l.net.toFixed(2)}</td>
+            </tr>`;
+        });
+        document.getElementById('table_B').innerHTML = html;
+    }
+
+    setTimeout(autoCalcDeposit, 100);
+</script>
+
+</body>
+</html>
